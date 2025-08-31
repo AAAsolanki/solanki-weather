@@ -1,48 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Weather • Tomorrow.io</title>
   <style>
-    body { font-family: Arial, sans-serif; background:#0f172a; color:white; text-align:center; }
-    .card { background:#1e293b; padding:20px; border-radius:10px; margin:20px auto; width:350px; }
-    button { margin-top:15px; padding:10px 15px; border:none; border-radius:6px; background:#2563eb; color:white; cursor:pointer; }
-    button:hover { background:#1d4ed8; }
+    :root { --bg:#0f172a; --card:#1e293b; --text:#e5e7eb; --muted:#94a3b8; --btn:#2563eb; --btnh:#1d4ed8; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--text); }
+    h1 { margin: 24px 0 10px; text-align:center; font-weight:700; }
+    .wrap { max-width: 940px; margin: 0 auto; padding: 0 16px 40px; }
+    .card { background:var(--card); border-radius:14px; padding:20px; margin:18px auto; max-width:520px; text-align:center; box-shadow: 0 10px 24px rgba(0,0,0,.25); }
+    .location { font-size:14px; color:var(--muted); margin-bottom:8px; }
+    .temp { font-size:48px; font-weight:800; line-height:1; margin: 6px 0; }
+    .cond { font-size:16px; color:var(--muted); margin-bottom:6px; }
+    .extra { font-size:14px; color:var(--muted); }
+    .btns { margin-top:16px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+    button { padding:10px 14px; border:0; border-radius:8px; background:var(--btn); color:white; cursor:pointer; font-weight:600; }
+    button:hover { background:var(--btnh); }
+    select { padding:10px 12px; border-radius:8px; border:0; background:#0b1220; color:var(--text); }
+    .logs { max-width:720px; margin:14px auto 0; color:var(--muted); font-size:13px; }
+    .logs p { margin:6px 0; word-break: break-word; }
   </style>
 </head>
 <body>
   <h1>Weather • Tomorrow.io</h1>
+  <div class="wrap">
+    <div class="card">
+      <div id="loc" class="location">Lat 28.716149, Lon 77.156293 (Default: Delhi)</div>
+      <div id="temp" class="temp">--°C</div>
+      <div id="cond" class="cond">--</div>
+      <div id="extra" class="extra">Humidity: -- | Wind: -- m/s</div>
 
-  <div class="card">
-    <div id="location">Lat 28.716149, Lon 77.156293 (Default: Delhi)</div>
-    <div id="temp">--°C</div>
-    <div id="condition">--</div>
-    <div id="extra">Humidity: -- | Wind: --</div>
-    <button id="useLoc">📍 Use My Location</button>
+      <div class="btns">
+        <button id="useLoc">📍 Use My Location</button>
+        <button id="refresh">Refresh</button>
+        <select id="hours">
+          <option value="24" selected>Next 24h</option>
+          <option value="48">Next 48h</option>
+          <option value="72">Next 72h</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="logs" class="logs"></div>
   </div>
 
-  <div id="logs"></div>
-
   <script>
-    const log = (msg) => {
-      const el = document.getElementById("logs");
-      el.innerHTML += `<p>${msg}</p>`;
-    };
+    // --- Config ---
+    const DEFAULT_LAT = 28.716149;   // Delhi
+    const DEFAULT_LON = 77.156293;   // Delhi
 
-    // Default coordinates: Delhi
-    let defaultLat = 28.716149;
-    let defaultLon = 77.156293;
+    // --- State ---
+    let currentLat = DEFAULT_LAT;
+    let currentLon = DEFAULT_LON;
+
+    // --- Helpers ---
+    const $ = (id) => document.getElementById(id);
+    const log = (msg) => { $('logs').innerHTML += `<p>${msg}</p>`; };
+    const setLocText = (lat, lon) => { $('loc').innerText = `Lat ${lat.toFixed(6)}, Lon ${lon.toFixed(6)}`; };
+
+    function decodeWeatherCode(code) {
+      // Fallback display if Tomorrow.io returns numeric code
+      const table = {
+        0: 'Unknown', 1000: 'Clear', 1100: 'Mostly Clear', 1101: 'Partly Cloudy', 1102: 'Mostly Cloudy',
+        2000: 'Fog', 2100: 'Light Fog', 3000: 'Light Wind', 3001: 'Wind', 3002: 'Strong Wind',
+        4000: 'Drizzle', 4001: 'Rain', 4200: 'Light Rain', 4201: 'Heavy Rain',
+        5000: 'Snow', 5001: 'Flurries', 5100: 'Light Snow', 5101: 'Heavy Snow',
+        6000: 'Freezing Drizzle', 6001: 'Freezing Rain', 6200: 'Light Freezing Rain', 6201: 'Heavy Freezing Rain',
+        7000: 'Ice Pellets', 7101: 'Heavy Ice Pellets', 7102: 'Light Ice Pellets',
+        8000: 'Thunderstorm'
+      };
+      if (typeof code === 'number') return table[code] || `Code ${code}`;
+      return code || '--';
+    }
 
     async function fetchWeather(lat, lon) {
-      document.getElementById("location").innerText = `Lat ${lat}, Lon ${lon}`;
-      log("Calling server…");
+      setLocText(lat, lon);
+      log('Calling server…');
 
       try {
+        const hours = parseInt($('hours').value || '24', 10);
+
         const res = await fetch('/.netlify/functions/timelines', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lat, lon, hours: 24 })
+          body: JSON.stringify({ lat, lon, hours })
         });
 
         const text = await res.text();
@@ -52,51 +95,54 @@
         }
 
         let data;
-        try { data = JSON.parse(text); }
-        catch(e) { log('Error: response was not valid JSON: ' + text); return; }
+        try { data = JSON.parse(text); } 
+        catch (e) { log('Error: response not valid JSON: ' + text); return; }
 
-        if (!data || !data.data || !data.data.timelines) {
-          log("Error: No data from API");
-          return;
-        }
+        // Find the first timeline with intervals
+        const timelines = (data && data.data && data.data.timelines) || [];
+        const tl = timelines.find(t => t.intervals && t.intervals.length) || null;
+        if (!tl) { log('Error: No timeline data.'); return; }
 
-        const current = data.data.timelines[0].intervals[0].values;
-        document.getElementById("temp").innerText = current.temperature + "°C";
-        document.getElementById("condition").innerText = current.weatherCode || "--";
-        document.getElementById("extra").innerText =
-          `Humidity: ${current.humidity}% | Wind: ${current.windSpeed} m/s`;
-        log("✅ OK");
+        const values = tl.intervals[0].values || {};
+        const temp = (values.temperature !== undefined) ? values.temperature : '--';
+        const hum  = (values.humidity !== undefined) ? values.humidity : '--';
+        const wind = (values.windSpeed !== undefined) ? values.windSpeed : '--';
+        const code = decodeWeatherCode(values.weatherCode);
+
+        $('temp').innerText = `${temp}°C`;
+        $('cond').innerText = code;
+        $('extra').innerText = `Humidity: ${hum}% | Wind: ${wind} m/s`;
+        log('✅ OK');
       } catch (err) {
-        log("Error: " + err.message);
+        log('Error: ' + err.message);
       }
     }
 
     function useMyLocation() {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const lat = pos.coords.latitude;
-            const lon = pos.coords.longitude;
-            fetchWeather(lat, lon);
-          },
-          () => {
-            log("⚠️ Permission denied/unavailable. Falling back to Delhi.");
-            fetchWeather(defaultLat, defaultLon);
-          }
-        );
-      } else {
-        log("⚠️ Geolocation not supported. Falling back to Delhi.");
-        fetchWeather(defaultLat, defaultLon);
+      if (!('geolocation' in navigator)) {
+        log('⚠️ Geolocation not supported.'); 
+        return;
       }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          currentLat = pos.coords.latitude;
+          currentLon = pos.coords.longitude;
+          fetchWeather(currentLat, currentLon);
+        },
+        () => {
+          log('⚠️ Permission denied or unavailable. Staying on default (Delhi).');
+        }
+      );
     }
 
-    document.getElementById('useLoc').addEventListener('click', useMyLocation);
+    // --- UI bindings ---
+    $('useLoc').addEventListener('click', useMyLocation);
+    $('refresh').addEventListener('click', () => fetchWeather(currentLat, currentLon));
+    $('hours').addEventListener('change', () => fetchWeather(currentLat, currentLon));
 
-    // Always load Delhi on start
-    fetchWeather(defaultLat, defaultLon);
+    // --- Initial load: Delhi ---
+    setLocText(currentLat, currentLon);
+    fetchWeather(currentLat, currentLon);
   </script>
 </body>
-</html>"""
-with open("/mnt/data/index_post.html", "w", encoding="utf-8") as f:
-    f.write(html_code)
-"/mnt/data/index_post.html"
+</html>
