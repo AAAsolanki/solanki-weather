@@ -1,22 +1,67 @@
 // netlify/functions/timelines.js
-export default async (request, context) => {
-  if (request.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type'
+};
+
+exports.handler = async (event) => {
+  // CORS preflight
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: cors, body: '' };
   }
-  const apiKey = process.env.TIO_KEY;
-  if (!apiKey) {
-    return new Response("Server not configured: missing TIO_KEY", { status: 500 });
-  }
+
   try {
-    const body = await request.json();
-    const resp = await fetch("https://api.tomorrow.io/v4/timelines", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": apiKey },
-      body: JSON.stringify(body)
+    // Parse input
+    let params = {};
+    if (event.httpMethod === 'GET') {
+      params = event.queryStringParameters || {};
+    } else if (event.httpMethod === 'POST') {
+      params = JSON.parse(event.body || '{}');
+    }
+
+    const lat = Number(params.lat);
+    const lon = Number(params.lon);
+    const hours = Math.min(Number(params.hours || 24), 120); // cap to 120h
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return {
+        statusCode: 400,
+        headers: { 'Content-Type': 'application/json', ...cors },
+        body: JSON.stringify({ error: 'Missing lat/lon' })
+      };
+    }
+
+    // Tomorrow.io Timelines payload
+    const payload = {
+      location: [lat, lon],                 // << required by Tomorrow.io
+      fields: ['temperature', 'humidity', 'windSpeed', 'weatherCode'],
+      timesteps: ['1h'],
+      units: 'metric',
+      startTime: 'now',
+      endTime: `nowPlus${hours}h`
+    };
+
+    const r = await fetch('https://api.tomorrow.io/v4/timelines', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: process.env.TIO_KEY      // << make sure this env var is set
+      },
+      body: JSON.stringify(payload)
     });
-    const text = await resp.text();
-    return new Response(text, { status: resp.status, headers: { "Content-Type": "application/json" } });
+
+    const text = await r.text(); // pass through raw (JSON or error)
+    return {
+      statusCode: r.status,
+      headers: { 'Content-Type': 'application/json', ...cors },
+      body: text
+    };
   } catch (err) {
-    return new Response(`Proxy error: ${err}`, { status: 500 });
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json', ...cors },
+      body: JSON.stringify({ error: err.message })
+    };
   }
 };
