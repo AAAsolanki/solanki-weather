@@ -1,4 +1,5 @@
-<!DOCTYPE html>
+# Create a revised index.html that calls the Netlify function with POST (expected by the function)
+html_code = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -6,7 +7,7 @@
   <title>Weather • Tomorrow.io</title>
   <style>
     body { font-family: Arial, sans-serif; background:#0f172a; color:white; text-align:center; }
-    .card { background:#1e293b; padding:20px; border-radius:10px; margin:20px auto; width:300px; }
+    .card { background:#1e293b; padding:20px; border-radius:10px; margin:20px auto; width:350px; }
     button { margin-top:15px; padding:10px 15px; border:none; border-radius:6px; background:#2563eb; color:white; cursor:pointer; }
     button:hover { background:#1d4ed8; }
   </style>
@@ -19,14 +20,16 @@
     <div id="temp">--°C</div>
     <div id="condition">--</div>
     <div id="extra">Humidity: -- | Wind: --</div>
-    <button onclick="useMyLocation()">📍 Use My Location</button>
+    <button id="useLoc">📍 Use My Location</button>
   </div>
 
-  <div id="forecast"></div>
   <div id="logs"></div>
 
   <script>
-    const logs = (msg) => document.getElementById("logs").innerHTML += `<p>${msg}</p>`;
+    const log = (msg) => {
+      const el = document.getElementById("logs");
+      el.innerHTML += `<p>${msg}</p>`;
+    };
 
     // Default coordinates: Delhi
     let defaultLat = 28.716149;
@@ -34,25 +37,38 @@
 
     async function fetchWeather(lat, lon) {
       document.getElementById("location").innerText = `Lat ${lat}, Lon ${lon}`;
-      logs("Calling server…");
+      log("Calling server…");
 
       try {
-        const res = await fetch(`/.netlify/functions/timelines?lat=${lat}&lon=${lon}`);
-        const data = await res.json();
+        const res = await fetch('/.netlify/functions/timelines', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lat, lon, hours: 24 })
+        });
 
-        if (!data.data) {
-          logs("Error: No data from API");
+        const text = await res.text();
+        if (!res.ok) {
+          log(`Error ${res.status}: ${text}`);
           return;
         }
 
-        let current = data.data.timelines[0].intervals[0].values;
+        let data;
+        try { data = JSON.parse(text); }
+        catch(e) { log('Error: response was not valid JSON: ' + text); return; }
+
+        if (!data || !data.data || !data.data.timelines) {
+          log("Error: No data from API");
+          return;
+        }
+
+        const current = data.data.timelines[0].intervals[0].values;
         document.getElementById("temp").innerText = current.temperature + "°C";
         document.getElementById("condition").innerText = current.weatherCode || "--";
         document.getElementById("extra").innerText =
           `Humidity: ${current.humidity}% | Wind: ${current.windSpeed} m/s`;
-        logs("✅ OK");
+        log("✅ OK");
       } catch (err) {
-        logs("Error: " + err.message);
+        log("Error: " + err.message);
       }
     }
 
@@ -60,23 +76,28 @@
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
-            let lat = pos.coords.latitude;
-            let lon = pos.coords.longitude;
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
             fetchWeather(lat, lon);
           },
           () => {
-            logs("⚠️ Permission denied or unavailable. Falling back to Delhi.");
+            log("⚠️ Permission denied/unavailable. Falling back to Delhi.");
             fetchWeather(defaultLat, defaultLon);
           }
         );
       } else {
-        logs("⚠️ Geolocation not supported. Falling back to Delhi.");
+        log("⚠️ Geolocation not supported. Falling back to Delhi.");
         fetchWeather(defaultLat, defaultLon);
       }
     }
+
+    document.getElementById('useLoc').addEventListener('click', useMyLocation);
 
     // Always load Delhi on start
     fetchWeather(defaultLat, defaultLon);
   </script>
 </body>
-</html>
+</html>"""
+with open("/mnt/data/index_post.html", "w", encoding="utf-8") as f:
+    f.write(html_code)
+"/mnt/data/index_post.html"
